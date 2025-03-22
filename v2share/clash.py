@@ -101,6 +101,25 @@ class ClashConfig(BaseConfig):
             node["cipher"] = config.shadowsocks_method
         return node
 
+    def render(self, sort: bool = True, shuffle: bool = False):
+        if shuffle is True:
+            configs = random.sample(self._configs, len(self._configs))
+        elif sort is True:
+            configs = sorted(self._configs, key=lambda config: config.weight)
+        else:
+            configs = self._configs
+
+        proxies, remarks = [], []
+        for proxy in configs:
+            proxies.append(self._get_node(proxy))
+            remarks.append(proxy.remark)
+
+        result = yaml.safe_load(self.template_data)
+        result["proxies"] = proxies
+        result["rules"] = []
+        result["proxy-groups"][0]["proxies"] = remarks
+        return yaml.safe_dump(result, sort_keys=False)
+    
     def add_proxies(self, proxies: List[V2Data]):
         for proxy in proxies:
             # validation
