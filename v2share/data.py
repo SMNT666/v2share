@@ -5,55 +5,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List
 from uuid import UUID
 
-from v2share._utils import filter_dict, set_path_early_data
+from v2share._utils import filter_dict
 from v2share.exceptions import ProtocolNotSupportedError
-
-
-@dataclass
-class XrayNoise:
-    type: str
-    packet: str
-    delay: str
-
-
-@dataclass
-class XMuxSettings:
-    max_concurrency: Optional[str] = None
-    max_connections: Optional[str] = None
-    max_reuse_times: Optional[str] = None
-    max_lifetime: Optional[str] = None
-    max_request_times: Optional[str] = None
-    keep_alive_period: Optional[int] = None
-
-
-@dataclass
-class SplitHttpSettings:
-    mode: Optional[str] = None
-    no_grpc_header: Optional[bool] = None
-    padding_bytes: Optional[str] = None
-    xmux: Optional[XMuxSettings] = None
-
-
-@dataclass
-class SingBoxMuxSettings:
-    max_connections: Optional[int] = None
-    min_streams: Optional[int] = None
-    max_streams: Optional[int] = None
-    padding: Optional[bool] = None
-
-
-@dataclass
-class MuxCoolSettings:
-    concurrency: Optional[int] = None
-    xudp_concurrency: Optional[int] = None
-    xudp_proxy_443: Optional[str] = None
-
-
-@dataclass
-class MuxSettings:
-    protocol: str = "mux_cool"
-    sing_box_mux_settings: Optional[SingBoxMuxSettings] = None
-    mux_cool_settings: Optional[MuxCoolSettings] = None
 
 
 @dataclass
@@ -70,8 +23,7 @@ class V2Data:
     host: Optional[str] = None
     http_headers: Dict[str, str] = field(default_factory=dict)
     transport_type: str = "tcp"
-    grpc_multi_mode: Optional[bool] = None
-    grpc_user_agent: Optional[str] = None
+    grpc_multi_mode: bool = False
     path: Optional[str] = None
     header_type: Optional[str] = None
     tls: str = "none"
@@ -87,8 +39,6 @@ class V2Data:
     fragment_packets: str = "tlshello"
     fragment_length: str = "100-200"
     fragment_interval: str = "10-20"
-    xray_noises: Optional[List[XrayNoise]] = None
-    early_data: Optional[int] = None
     mtu: Optional[int] = None
     dns_servers: Optional[List[str]] = None
     allowed_ips: Optional[List[str]] = None
@@ -96,11 +46,9 @@ class V2Data:
     tuic_udp_relay_mode: Optional[str] = None
     shadowtls_version: Optional[int] = None
     disable_sni: bool = False
+    enable_mux: bool = False
     allow_insecure: bool = False
     weight: int = 1
-    next: Optional["V2Data"] = None
-    splithttp_settings: Optional[SplitHttpSettings] = None
-    mux_settings: Optional[MuxSettings] = None
 
     def _apply_tls_settings(self, payload):
         if self.tls in ["tls", "reality"]:
@@ -140,38 +88,6 @@ class V2Data:
             transport_data = {"key": self.path, "quicSecurity": self.host}
         else:
             transport_data = {"path": self.path, "host": self.host}
-            if self.transport_type in {"ws", "httpupgrade"} and self.early_data:
-                transport_data["path"] = set_path_early_data(
-                    transport_data.get("path", "/"), self.early_data
-                )
-            if (
-                self.transport_type == "splithttp"
-                and self.splithttp_settings is not None
-            ):
-                transport_data["mode"] = self.splithttp_settings.mode
-                transport_data["extra"] = filter_dict(
-                    {
-                        "headers": self.http_headers,
-                        "xPaddingBytes": self.splithttp_settings.padding_bytes,
-                        "noGRPCHeader": self.splithttp_settings.no_grpc_header,
-                        "xmux": (
-                            filter_dict(
-                                {
-                                    "maxConcurrency": self.splithttp_settings.xmux.max_concurrency,
-                                    "maxConnections": self.splithttp_settings.xmux.max_connections,
-                                    "cMaxReuseTimes": self.splithttp_settings.xmux.max_reuse_times,
-                                    "cMaxLifetimeMs": self.splithttp_settings.xmux.max_lifetime,
-                                    "hMaxRequestTimes": self.splithttp_settings.xmux.max_request_times,
-                                    "hKeepAlivePeriod": self.splithttp_settings.xmux.keep_alive_period,
-                                },
-                                (None,),
-                            )
-                            if self.splithttp_settings.xmux is not None
-                            else None
-                        ),
-                    },
-                    (None,),
-                )
 
         payload.update(transport_data)
 
@@ -194,23 +110,13 @@ class V2Data:
                 "aid": "0",
                 "host": self.host,
                 "id": str(self.uuid),
-                "net": (
-                    self.transport_type
-                    if self.transport_type != "splithttp"
-                    else "xhttp"
-                ),
+                "net": self.transport_type,
                 "path": self.path,
                 "port": self.port,
                 "ps": self.remark,
                 "scy": self.vmess_security,
                 "tls": self.tls,
-                "type": (
-                    self.header_type
-                    if self.transport_type != "splithttp"
-                    or not self.splithttp_settings
-                    or not self.splithttp_settings.mode
-                    else self.splithttp_settings.mode
-                ),
+                "type": self.header_type,
                 "v": "2",
             }
 
@@ -226,11 +132,7 @@ class V2Data:
         if self.protocol in ["trojan", "vless"]:
             payload = {
                 "security": self.tls,
-                "type": (
-                    self.transport_type
-                    if self.transport_type != "splithttp"
-                    else "xhttp"
-                ),
+                "type": self.transport_type,
                 "headerType": self.header_type,
             }
             if self.protocol == "vless" and self.flow:
