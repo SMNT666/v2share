@@ -56,7 +56,7 @@ class ClashConfig(BaseConfig):
         result["proxies"] = proxies
         # result["rules"] = []
         result["proxy-groups"][0]["proxies"] = remarks
-        return yaml.safe_dump(result, sort_keys=False)
+        return yaml.safe_dump(result, sort_keys=False, indent=2, default_flow_style=False)
 
     def _make_node(
         self,
